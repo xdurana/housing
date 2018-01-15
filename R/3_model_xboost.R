@@ -1,41 +1,40 @@
 library(xgboost)
 
-dtrain <- xgb.DMatrix(as.matrix(train_trans %>% select(-SalePrice)), label = train_trans$SalePrice)
-dtest <- xgb.DMatrix(as.matrix(test_trans))
+train <- read_csv('output/train.csv')
+test <- read_csv('output/test.csv')
 
-cv.ctrl <- trainControl(
-  method = "repeatedcv",
-  repeats = 1,
-  number = 4,
-  allowParallel = T
-)
+outcomes <- train$SalePrice
 
-xgb.grid <- expand.grid(
-  nrounds = 750,
-  eta = c(0.01,0.005,0.001),
-  max_depth = c(4,6,8),
-  colsample_bytree=c(0,1,10),
-  min_child_weight = 2,
-  subsample=c(0,0.2,0.4,0.6),
-  gamma=0.01
-)
+dtrain <- xgb.DMatrix(as.matrix(train %>% select(-SalePrice)), label = train$SalePrice)
+dtest <- xgb.DMatrix(as.matrix(test))
 
-set.seed(45)
-
-xgb_params <- list(
-  booster = 'gbtree',
+param <- list(
   objective = 'reg:linear',
   colsample_bytree=1,
   eta=0.005,
-  max_depth=4,
+  max_depth=6,
   min_child_weight=3,
   alpha=0.3,
   lambda=0.4,
   gamma=0.01, # less overfit
   subsample=0.6,
-  seed=5,
-  silent=TRUE
+  seed=5
 )
 
-#xgb.cv(xgb_params, dtrain, nrounds = 5000, nfold = 4, early_stopping_rounds = 500)
-bst <- xgb.train(xgb_params, dtrain, nrounds = 10)#, early_stopping_rounds = 300, watchlist = list(train=dtrain))
+xgb_model <- xgb.train(
+  data = dtrain,
+  params = param,
+  watchlist = list(train = dtrain),
+  nrounds = 7000,
+  verbose = 1,
+  print_every_n = 100
+)
+
+# submit
+
+predicted = expm1(predict(xgb_model, dtest))
+output <- data.frame(test$Id, predicted)
+colnames(output) <- cbind("Id", "SalePrice")
+output %>% write_csv('submission/xgb.csv')
+
+
