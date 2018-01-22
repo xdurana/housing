@@ -1,7 +1,7 @@
 library(caret)
 
-train <- read_csv('output/train.csv')
-test <- read_csv('output/test.csv')
+train <- read_csv('output/train_imputed.csv')
+test <- read_csv('output/test_imputed.csv')
 
 linear <- lm(SalePrice ~ ., data = train)
 summary(linear)

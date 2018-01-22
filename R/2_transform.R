@@ -1,10 +1,12 @@
 library(ggplot2)
 library(readr)
-library(dplyr)
 library(caret)
 library(corrplot)
 library(mice)
 library(VIM)
+library(moments)
+library(MASS)
+library(dplyr)
 
 transform <- function(do_impute = TRUE) {
   
@@ -15,7 +17,7 @@ transform <- function(do_impute = TRUE) {
   
   # Missings
   
-  all <- rbind(train %>% mutate(train = 1) %>% select(-SalePrice), test %>% mutate(train = 0))
+  all <- rbind(train %>% mutate(train = 1) %>% dplyr::select(-SalePrice), test %>% mutate(train = 0))
   
   aggr_plot <- aggr(
     all,
@@ -34,29 +36,29 @@ transform <- function(do_impute = TRUE) {
   
   # Transform categorical variables
   
-  all <- all %>%
-    mutate(
-      GarageFinish = as.factor(ifelse(is.na(GarageFinish), 'NA', GarageFinish)),
-      GarageQual = as.factor(ifelse(is.na(GarageQual), 'NA', GarageQual)),
-      GarageCond = as.factor(ifelse(is.na(GarageCond), 'NA', GarageCond)),
-      GarageType = as.factor(ifelse(is.na(GarageType), 'NA', GarageType)),
-      BsmtCond = as.factor(ifelse(is.na(BsmtCond), 'NA', BsmtCond)),
-      BsmtExposure = as.factor(ifelse(is.na(BsmtExposure), 'NA', BsmtExposure)),
-      BsmtQual = as.factor(ifelse(is.na(BsmtQual), 'NA', BsmtQual)),
-      BsmtFinType2 = as.factor(ifelse(is.na(BsmtFinType2), 'NA', BsmtFinType2)),
-      BsmtFinType1 = as.factor(ifelse(is.na(BsmtFinType1), 'NA', BsmtFinType1)),
-      Electrical = as.factor(ifelse(is.na(Electrical), 'SBrkr', Electrical)),
-      MSZoning = as.factor(ifelse(is.na(MSZoning), 'RL', MSZoning)),
-      KitchenQual = as.factor(ifelse(is.na(KitchenQual), 'TA', KitchenQual)),
-      Functional = as.factor(ifelse(is.na(Functional), 'Typ', Functional)),
-      SaleType = as.factor(ifelse(is.na(SaleType), 'WD', SaleType)),
-      Exterior1st = as.factor(ifelse(is.na(Exterior1st), 'VinylSd', Exterior1st)),
-      Exterior2nd = as.factor(ifelse(is.na(Exterior2nd), 'VinylSd', Exterior2nd)),
-      MasVnrType = as.factor(ifelse(is.na(MasVnrType), 'None', MasVnrType))
-    ) %>%
-    select(
-      -Utilities
-    )
+all <- all %>%
+  mutate(
+    GarageFinish = as.factor(ifelse(is.na(GarageFinish), 'NA', GarageFinish)),
+    GarageQual = as.factor(ifelse(is.na(GarageQual), 'NA', GarageQual)),
+    GarageCond = as.factor(ifelse(is.na(GarageCond), 'NA', GarageCond)),
+    GarageType = as.factor(ifelse(is.na(GarageType), 'NA', GarageType)),
+    BsmtCond = as.factor(ifelse(is.na(BsmtCond), 'NA', BsmtCond)),
+    BsmtExposure = as.factor(ifelse(is.na(BsmtExposure), 'NA', BsmtExposure)),
+    BsmtQual = as.factor(ifelse(is.na(BsmtQual), 'NA', BsmtQual)),
+    BsmtFinType2 = as.factor(ifelse(is.na(BsmtFinType2), 'NA', BsmtFinType2)),
+    BsmtFinType1 = as.factor(ifelse(is.na(BsmtFinType1), 'NA', BsmtFinType1)),
+    Electrical = as.factor(ifelse(is.na(Electrical), 'SBrkr', Electrical)),
+    MSZoning = as.factor(ifelse(is.na(MSZoning), 'RL', MSZoning)),
+    KitchenQual = as.factor(ifelse(is.na(KitchenQual), 'TA', KitchenQual)),
+    Functional = as.factor(ifelse(is.na(Functional), 'Typ', Functional)),
+    SaleType = as.factor(ifelse(is.na(SaleType), 'WD', SaleType)),
+    Exterior1st = as.factor(ifelse(is.na(Exterior1st), 'VinylSd', Exterior1st)),
+    Exterior2nd = as.factor(ifelse(is.na(Exterior2nd), 'VinylSd', Exterior2nd)),
+    MasVnrType = as.factor(ifelse(is.na(MasVnrType), 'None', MasVnrType))
+  ) %>%
+  dplyr::select(
+    -Utilities
+  )
   
   aggr_plot <- aggr(
     all,
@@ -69,12 +71,39 @@ transform <- function(do_impute = TRUE) {
     ylab=c("Histogram of missing data","Pattern")
   )
   
+  # Not numeric variables
+  
+  all <- all %>% mutate(
+    MSSubClass = as.factor(MSSubClass)
+  )
+  
   # Impute missings
   
   if (do_impute) {
-    imp.all <- mice(all, m = 1, method = 'rf', printFlag = FALSE)
+    imp.all <- mice(all, m = 1, method = 'pmm', printFlag = FALSE)
     all <- complete(imp.all)
   }
+  
+  # Correct skewness of numeric variables
+  
+  feature_classes <- sapply(names(all), function(x) {
+    class(all[[x]])
+  })
+  
+  numeric_feats <- names(feature_classes[feature_classes == "integer"])
+  
+  skewed_feats <- sapply(numeric_feats, function(x) {
+    skewness(all[[x]], na.rm = TRUE)
+  })
+  
+  ## Keep only features that exceed a threshold (0.75) for skewness
+  skewed_feats <- skewed_feats[abs(skewed_feats) > 0.75]
+  
+  ## Transform skewed features with boxcox transformation
+  for (x in names(skewed_feats)) {
+    bc = BoxCoxTrans(all[[x]], lambda = 0.15)
+    all[[x]] = predict(bc, all[[x]])
+  }  
   
   # Create dummy variables
   
@@ -92,11 +121,11 @@ transform <- function(do_impute = TRUE) {
   
   train_trans <- all %>%
     filter(train == 1) %>%
-    left_join(train %>% select(Id, SalePrice)) %>%
+    left_join(train %>% dplyr::select(Id, SalePrice)) %>%
     mutate(
       SalePrice = log1p(SalePrice)
     ) %>%
-    select(
+    dplyr::select(
       -Id,
       -train
     )
@@ -108,7 +137,7 @@ transform <- function(do_impute = TRUE) {
     mutate(
       Id = as.factor(as.character(Id))
     ) %>%
-    select(
+    dplyr::select(
       -train
     )
   

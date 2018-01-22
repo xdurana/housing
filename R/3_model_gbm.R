@@ -2,9 +2,10 @@ library(readr)
 library(iterators)
 library(parallel)
 library(doMC)
+library(data.table)
 
-train <- read_csv('output/train_imputed.csv')
-test <- read_csv('output/test_imputed.csv')
+train <- fread('output/train_imputed.csv')
+test <- fread('output/test_imputed.csv')
 
 registerDoMC(detectCores())
 
